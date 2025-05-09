@@ -1,118 +1,163 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>fg-crash</title>
-  <style>
-    html, body {
-      margin: 0;
-      overflow: hidden;
-      background: black;
-    }
-    canvas {
-      width: 100vw;
-      height: 100vh;
-      display: block;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>fg-crash</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
 </head>
 <body>
-  <canvas id="crashCanvas"></canvas>
-  <script>
-    const canvas = document.getElementById('crashCanvas');
-    const gl = canvas.getContext('webgl');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    <canvas id="fg-crash-canvas"></canvas>
+    <script>
+        const canvas = document.getElementById("fg-crash-canvas");
+        const gl = canvas.getContext("webgl2");
 
-    const vert = `
-      attribute vec2 a_position;
-      varying vec2 v_uv;
-      void main() {
-        v_uv = a_position * 0.5 + 0.5;
-        gl_Position = vec4(a_position, 0, 1);
-      }
-    `;
-
-    const frag = `
-      precision highp float;
-      varying vec2 v_uv;
-      uniform float u_time;
-      uniform vec2 u_resolution;
-
-      void main() {
-        vec2 uv = v_uv * u_resolution.xy / min(u_resolution.x, u_resolution.y);
-        vec3 color = vec3(0.0);
-        float t = u_time * 0.05;
-        
-        for (float i = 0.0; i < 1000.0; i++) {
-          float angle = t + i * 0.0001;
-          uv = vec2(
-            uv.x + sin(angle + uv.y) * 0.001,
-            uv.y + cos(angle + uv.x) * 0.001
-          );
-          color += vec3(
-            sin(uv.x * 10.0 + i),
-            cos(uv.y * 10.0 + i),
-            sin(uv.x * uv.y + i)
-          ) * 0.0001;
+        if (!gl) {
+            alert("WebGL2 is not supported in this browser.");
+            throw new Error("WebGL2 not supported");
         }
 
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-    function createShader(type, source) {
-      const shader = gl.createShader(type);
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error(gl.getShaderInfoLog(shader));
-        throw "Shader compile failed";
-      }
-      return shader;
-    }
+        const vertexShaderSource = `
+            attribute vec4 a_position;
+            void main() {
+                gl_Position = a_position;
+            }
+        `;
 
-    const vertexShader = createShader(gl.VERTEX_SHADER, vert);
-    const fragmentShader = createShader(gl.FRAGMENT_SHADER, frag);
+        const fragmentShaderSource = `
+            precision highp float;
+            uniform float u_time;
+            uniform vec2 u_resolution;
 
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.error(gl.getProgramInfoLog(program));
-      throw "Shader program linking failed";
-    }
+            // Function to simulate extremely complex fractal noise
+            float noise(vec3 p) {
+                return sin(p.x * p.y * p.z);
+            }
 
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1, -1,
-       1, -1,
-      -1,  1,
-      -1,  1,
-       1, -1,
-       1,  1
-    ]), gl.STATIC_DRAW);
+            float fbm(vec3 p) {
+                float f = 0.0;
+                float a = 0.5;
+                for (int i = 0; i < 10; i++) {
+                    f += a * noise(p);
+                    p *= 2.0;
+                    a *= 0.5;
+                }
+                return f;
+            }
 
-    const a_position = gl.getAttribLocation(program, "a_position");
-    const u_time = gl.getUniformLocation(program, "u_time");
-    const u_resolution = gl.getUniformLocation(program, "u_resolution");
+            // Complex 3D raymarching
+            float complexRaymarch(vec3 p) {
+                float dist = 0.0;
+                float total = 0.0;
+                for (int i = 0; i < 1000; i++) {
+                    dist = fbm(p);
+                    p += dist * 0.1;
+                    total += dist;
+                }
+                return total;
+            }
 
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.useProgram(program);
-    gl.enableVertexAttribArray(a_position);
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.vertexAttribPointer(a_position, 2, gl.FLOAT, false, 0, 0);
+            // An effect-heavy fractal pattern generator
+            void main() {
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+                uv = uv * 2.0 - 1.0; // map to [-1, 1]
 
-    function render(time) {
-      gl.uniform1f(u_time, time * 0.001);
-      gl.uniform2f(u_resolution, canvas.width, canvas.height);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      requestAnimationFrame(render);
-    }
+                // Rotate coordinates for extra complexity
+                float angle = u_time * 0.1;
+                mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+                uv = rot * uv;
 
-    requestAnimationFrame(render);
-  </script>
+                vec3 p = vec3(uv, u_time * 0.1);
+
+                // Apply noise to create turbulence
+                float turbulence = 0.0;
+                for (int i = 0; i < 20; i++) {
+                    turbulence += fbm(p + float(i) * 0.1);
+                    p *= 1.5;
+                }
+
+                // Create a very high iteration fractal pattern
+                float dist = complexRaymarch(p);
+                vec3 color = vec3(dist * 0.05, dist * 0.1, dist * 0.2);
+
+                // Visual distortion effect
+                float dist2 = complexRaymarch(p + vec3(0.3, 0.5, 0.7));
+                color = mix(color, vec3(1.0, 1.0, 0.0), dist2 * 0.5);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        function createShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("Shader compile error: ", gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                throw new Error("Shader compile error");
+            }
+            return shader;
+        }
+
+        function createProgram(vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error("Program link error: ", gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                throw new Error("Program link error");
+            }
+            return program;
+        }
+
+        const vertexShader = createShader(vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = createShader(fragmentShaderSource, gl.FRAGMENT_SHADER);
+        const program = createProgram(vertexShader, fragmentShader);
+
+        const positionLocation = gl.getAttribLocation(program, "a_position");
+        const timeLocation = gl.getUniformLocation(program, "u_time");
+        const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const vertices = new Float32Array([
+            -1.0, -1.0,
+            1.0, -1.0,
+            -1.0, 1.0,
+            -1.0, 1.0,
+            1.0, -1.0,
+            1.0, 1.0
+        ]);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.useProgram(program);
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        function render(time) {
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.uniform1f(timeLocation, time * 0.1);
+            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            requestAnimationFrame(render);
+        }
+
+        // Fullscreen init
+        document.body.requestFullscreen().catch((err) => {
+            console.error("Fullscreen failed:", err);
+        });
+
+        // Start rendering
+        requestAnimationFrame(render);
+    </script>
 </body>
 </html>
